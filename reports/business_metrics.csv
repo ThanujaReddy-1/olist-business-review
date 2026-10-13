@@ -1,0 +1,5 @@
+metric,value,definition
+Monthly Delivered GMV,838576.64,"Sum of item prices for delivered orders, by month"
+Repeat Purchase Rate,3.12%,Unique customers with more than one order / all unique customers
+Average Review Score,4.16,Average review score for delivered orders
+Late Delivery Rate,8.11%,Delivered orders later than estimated / delivered orders with known delay
