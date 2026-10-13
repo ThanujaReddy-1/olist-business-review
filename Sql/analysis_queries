@@ -1,0 +1,176 @@
+WITH monthly_revenue AS (
+    SELECT
+        DATE_TRUNC(
+            'month',
+            order_purchase_timestamp
+        ) AS order_month,
+        SUM(payment_total) AS revenue
+    FROM mart_order_summary
+    WHERE order_status = 'delivered'
+    GROUP BY DATE_TRUNC(
+        'month',
+        order_purchase_timestamp
+    )
+),
+revenue_with_previous AS (
+    SELECT
+        order_month,
+        revenue,
+        LAG(revenue) OVER (
+            ORDER BY order_month
+        ) AS previous_month_revenue
+    FROM monthly_revenue
+)
+SELECT
+    order_month,
+    ROUND(revenue::numeric, 2) AS revenue,
+    ROUND(previous_month_revenue::numeric, 2)
+        AS previous_month_revenue,
+    ROUND(
+        (
+            (revenue - previous_month_revenue)
+            / NULLIF(previous_month_revenue, 0)
+        )::numeric * 100,
+        2
+    ) AS growth_percentage
+FROM revenue_with_previous
+ORDER BY order_month;
+
+//Query2
+
+WITH category_revenue AS (
+    SELECT
+        c.customer_state,
+        p.product_category_name,
+        SUM(oi.price) AS total_revenue
+    FROM stg_orders o
+    JOIN stg_customers c
+        ON o.customer_id = c.customer_id
+    JOIN stg_order_items oi
+        ON o.order_id = oi.order_id
+    JOIN stg_products p
+        ON oi.product_id = p.product_id
+    WHERE o.order_status = 'delivered'
+    GROUP BY
+        c.customer_state,
+        p.product_category_name
+),
+ranked_categories AS (
+    SELECT
+        customer_state,
+        product_category_name,
+        total_revenue,
+        DENSE_RANK() OVER (
+            PARTITION BY customer_state
+            ORDER BY total_revenue DESC
+        ) AS category_rank
+    FROM category_revenue
+)
+SELECT
+    customer_state,
+    product_category_name,
+    ROUND(total_revenue::numeric, 2) AS total_revenue,
+    category_rank
+FROM ranked_categories
+WHERE category_rank <= 3
+ORDER BY customer_state, category_rank;
+
+//Query 3
+
+WITH daily_orders AS (
+    SELECT
+        CAST(order_purchase_timestamp AS DATE) AS order_date,
+        COUNT(*) AS total_orders
+    FROM mart_order_summary
+    GROUP BY CAST(order_purchase_timestamp AS DATE)
+),
+rolling_orders AS (
+    SELECT
+        order_date,
+        total_orders,
+        AVG(total_orders) OVER (
+            ORDER BY order_date
+            ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+        ) AS seven_day_avg
+    FROM daily_orders
+)
+SELECT
+    order_date,
+    total_orders,
+    ROUND(seven_day_avg, 2) AS seven_day_rolling_average
+FROM rolling_orders
+ORDER BY order_date;
+
+
+Query 4
+
+WITH customer_orders AS (
+    SELECT
+        customer_unique_id,
+        COUNT(DISTINCT order_id) AS order_count
+    FROM mart_order_summary
+    WHERE customer_unique_id IS NOT NULL
+    GROUP BY customer_unique_id
+),
+repeat_customers AS (
+    SELECT
+        COUNT(*) AS repeat_customer_count
+    FROM customer_orders
+    WHERE order_count > 1
+),
+all_customers AS (
+    SELECT
+        COUNT(*) AS total_customer_count
+    FROM customer_orders
+)
+SELECT
+    r.repeat_customer_count,
+    a.total_customer_count,
+    ROUND(
+        100.0 * r.repeat_customer_count
+        / NULLIF(a.total_customer_count, 0),
+        2
+    ) AS repeat_purchase_rate_percentage
+FROM repeat_customers r
+CROSS JOIN all_customers a;
+
+//Query 5
+
+SELECT
+    ROUND(
+        AVG(delivery_delay_days)::numeric,
+        2
+    ) AS average_delivery_delay_days,
+
+    ROUND(
+        AVG(avg_review_score)::numeric,
+        2
+    ) AS overall_average_review_score,
+
+    CASE
+        WHEN delivery_delay_days < 0
+            THEN 'Early delivery'
+        WHEN delivery_delay_days = 0
+            THEN 'On-time delivery'
+        WHEN delivery_delay_days > 0
+            THEN 'Late delivery'
+    END AS delivery_category,
+
+    COUNT(*) AS total_orders,
+
+    ROUND(
+        AVG(avg_review_score)::numeric,
+        2
+    ) AS average_review_score
+FROM mart_order_summary
+WHERE delivery_delay_days IS NOT NULL
+GROUP BY
+    CASE
+        WHEN delivery_delay_days < 0
+            THEN 'Early delivery'
+        WHEN delivery_delay_days = 0
+            THEN 'On-time delivery'
+        WHEN delivery_delay_days > 0
+            THEN 'Late delivery'
+    END
+ORDER BY average_delivery_delay_days;
