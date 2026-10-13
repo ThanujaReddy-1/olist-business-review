@@ -1,0 +1,7 @@
+check_name,failed_rows,status
+Missing order IDs,0,PASS
+Duplicate order IDs,0,PASS
+Invalid review scores,0,PASS
+Negative item prices,0,PASS
+Orders with missing customers,0,PASS
+Delivery before purchase,0,PASS
